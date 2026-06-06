@@ -1,0 +1,320 @@
+-- =============================================================================
+-- SERVIÇOS DO ROBLOX
+-- =============================================================================
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- =============================================================================
+-- ESTADO / CONFIGURAÇÕES
+-- =============================================================================
+local AUTOFARM_ATIVO = false
+local ALVO_SELECIONADO = "Mais Próximo" -- Pode ser "Mais Próximo" ou o Nome de alguém
+
+local DISTANCIA_MIRA = 1000
+local PROFUNDIDADE_TERRA = 6 -- Distância abaixo do inimigo (em studs)
+local COOLDOWN_ATAQUE = 0.15
+local MENU_ABERTO = true -- Controla se o menu começa aberto ou fechado
+
+-- =============================================================================
+-- CRIAÇÃO DA INTERFACE GRÁFICA (UI)
+-- =============================================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AutofarmPremiumUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- Evitar duplicação da UI se reexecutar o script
+local uiAntiga = localPlayer:WaitForChild("PlayerGui"):FindFirstChild("AutofarmPremiumUI")
+if uiAntiga then uiAntiga:Destroy() end
+ScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+-- -----------------------------------------------------------------------------
+-- NOVO: BOTÃO DE ABRIR / FECHAR (Alternador Global)
+-- -----------------------------------------------------------------------------
+local MenuToggleBtn = Instance.new("TextButton")
+MenuToggleBtn.Name = "MenuToggleBtn"
+MenuToggleBtn.Size = UDim2.new(0, 100, 0, 35)
+MenuToggleBtn.Position = UDim2.new(0, 10, 0, 10) -- Fica no topo esquerdo da tela
+MenuToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MenuToggleBtn.Text = "Fechar Hub"
+MenuToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MenuToggleBtn.Font = Enum.Font.GothamBold
+MenuToggleBtn.TextSize = 12
+MenuToggleBtn.Parent = ScreenGui
+
+local MenuToggleCorner = Instance.new("UICorner")
+MenuToggleCorner.CornerRadius = UDim.new(0, 6)
+MenuToggleCorner.Parent = MenuToggleBtn
+
+local MenuToggleStroke = Instance.new("UIStroke")
+MenuToggleStroke.Color = Color3.fromRGB(60, 60, 60)
+MenuToggleStroke.Thickness = 1
+MenuToggleStroke.Parent = MenuToggleBtn
+
+-- Frame Principal (Janela)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 300, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -150, 0.4, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true 
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
+
+-- Título
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundTransparency = 1
+Title.Text = "★ KILLER HUB | UNDERGROUND ★"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.Parent = MainFrame
+
+-- Linha divisória
+local Line = Instance.new("Frame")
+Line.Size = UDim2.new(0.9, 0, 0, 1)
+Line.Position = UDim2.new(0.05, 0, 0, 40)
+Line.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+Line.BorderSizePixel = 0
+Line.Parent = MainFrame
+
+-- Botão de Ligar / Desligar (Toggle do Autofarm)
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Size = UDim2.new(0.9, 0, 0, 45)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0, 55)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40) -- Vermelho (Desligado)
+ToggleBtn.Text = "STATUS: DESLIGADO"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 14
+ToggleBtn.AutoButtonColor = false
+ToggleBtn.Parent = MainFrame
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(0, 8)
+BtnCorner.Parent = ToggleBtn
+
+-- Subtítulo da Lista de Alvos
+local ListTitle = Instance.new("TextLabel")
+ListTitle.Size = UDim2.new(0.9, 0, 0, 25)
+ListTitle.Position = UDim2.new(0.05, 0, 0, 110)
+ListTitle.BackgroundTransparency = 1
+ListTitle.Text = "Selecione o Alvo para Focar:"
+ListTitle.TextColor3 = Color3.fromRGB(180, 180, 180)
+ListTitle.Font = Enum.Font.GothamSemibold
+ListTitle.TextSize = 13
+ListTitle.TextXAlignment = Enum.TextXAlignment.Left
+ListTitle.Parent = MainFrame
+
+-- Container de Lista com Scroll
+local ScrollingFrame = Instance.new("ScrollingFrame")
+ScrollingFrame.Size = UDim2.new(0.9, 0, 0, 190)
+ScrollingFrame.Position = UDim2.new(0.05, 0, 0, 140)
+ScrollingFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+ScrollingFrame.BorderSizePixel = 0
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollingFrame.ScrollBarThickness = 4
+ScrollingFrame.ScrollBarImageColor3 = Color3.fromRGB(80, 80, 80)
+ScrollingFrame.Parent = MainFrame
+
+local ScrollCorner = Instance.new("UICorner")
+ScrollCorner.CornerRadius = UDim.new(0, 6)
+ScrollCorner.Parent = ScrollingFrame
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ScrollingFrame
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+
+-- =============================================================================
+-- LÓGICA DE INTERFACE: ABRIR / FECHAR
+-- =============================================================================
+MenuToggleBtn.MouseButton1Click:Connect(function()
+	MENU_ABERTO = not MENU_ABERTO
+	
+	if MENU_ABERTO then
+		MenuToggleBtn.Text = "Fechar Hub"
+		TweenService:Create(MenuToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}):Play()
+		MainFrame.Visible = true
+	else
+		MenuToggleBtn.Text = "Abrir Hub"
+		TweenService:Create(MenuToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(0, 120, 255)}):Play()
+		MainFrame.Visible = false
+	end
+end)
+
+-- =============================================================================
+-- LÓGICA DE SELEÇÃO E ATUALIZAÇÃO DA LISTA DE JOGADORES
+-- =============================================================================
+local botoesJogadores = {}
+
+local function atualizarListaAlvos()
+	for _, obj in ipairs(ScrollingFrame:GetChildren()) do
+		if obj:IsA("TextButton") then obj:Destroy() end
+	end
+	botoesJogadores = {}
+
+	local deuses = {"Mais Próximo"}
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= localPlayer then table.insert(deuses, p.Name) end
+	end
+
+	for i, nome in ipairs(deuses) do
+		local PlayerBtn = Instance.new("TextButton")
+		PlayerBtn.Size = UDim2.new(1, -6, 0, 35)
+		PlayerBtn.Font = Enum.Font.Gotham
+		PlayerBtn.TextSize = 13
+		PlayerBtn.Text = nome
+		PlayerBtn.BorderSizePixel = 0
+		
+		local pCorner = Instance.new("UICorner")
+		pCorner.CornerRadius = UDim.new(0, 4)
+		pCorner.Parent = PlayerBtn
+
+		if ALVO_SELECIONADO == nome then
+			PlayerBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+			PlayerBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		else
+			PlayerBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+			PlayerBtn.TextColor3 = Color3.fromRGB(200, 200, 200)
+		end
+
+		PlayerBtn.MouseButton1Click:Connect(function()
+			ALVO_SELECIONADO = nome
+			atualizarListaAlvos()
+		end)
+
+		PlayerBtn.Parent = ScrollingFrame
+	end
+	
+	ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 10)
+end
+
+Players.PlayerAdded:Connect(atualizarListaAlvos)
+Players.PlayerRemoving:Connect(function(player)
+	if ALVO_SELECIONADO == player.Name then
+		ALVO_SELECIONADO = "Mais Próximo"
+	end
+	atualizarListaAlvos()
+end)
+
+atualizarListaAlvos()
+
+ToggleBtn.MouseButton1Click:Connect(function()
+	AUTOFARM_ATIVO = not AUTOFARM_ATIVO
+	if AUTOFARM_ATIVO then
+		TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 160, 40)}):Play()
+		ToggleBtn.Text = "STATUS: ATIVADO"
+	else
+		TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(180, 40, 40)}):Play()
+		ToggleBtn.Text = "STATUS: DESLIGADO"
+	end
+end)
+
+-- =============================================================================
+-- SISTEMA DE BUSCA DE INIMIGOS
+-- =============================================================================
+local function obterInimigoValido()
+	local meuChar = localPlayer.Character
+	if not meuChar or not meuChar:FindFirstChild("HumanoidRootPart") then return nil end
+	local meuRoot = meuChar.HumanoidRootPart
+
+	if ALVO_SELECIONADO ~= "Mais Próximo" then
+		local pAlvo = Players:FindFirstChild(ALVO_SELECIONADO)
+		if pAlvo and pAlvo.Character then
+			local char = pAlvo.Character
+			local humanoid = char:FindFirstChildOfClass("Humanoid")
+			local rootPart = char:FindFirstChild("HumanoidRootPart")
+			
+			if humanoid and rootPart and humanoid.Health > 0 and not char:FindFirstChildOfClass("ForceField") then
+				return char
+			end
+		end
+		return nil 
+	end
+
+	local alvoMaisProximo = nil
+	local menorDistancia = DISTANCIA_MIRA
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= localPlayer and player.Character then
+			local char = player.Character
+			local humanoid = char:FindFirstChildOfClass("Humanoid")
+			local rootPart = char:FindFirstChild("HumanoidRootPart")
+
+			if humanoid and rootPart and humanoid.Health > 0 and not char:FindFirstChildOfClass("ForceField") then
+				local distancia = (meuRoot.Position - rootPart.Position).Magnitude
+				if distancia < menorDistancia then
+					menorDistancia = distancia
+					alvoMaisProximo = char
+				end
+			end
+		end
+	end
+	return alvoMaisProximo
+end
+
+-- =============================================================================
+-- LOOP PRINCIPAL (MODO SUBTERRÂNEO)
+-- =============================================================================
+task.spawn(function()
+	local ultimoAtaque = 0
+
+	while true do
+		RunService.Heartbeat:Wait()
+		
+		if AUTOFARM_ATIVO then
+			local meuChar = localPlayer.Character
+			if meuChar then
+				local meuRoot = meuChar:FindFirstChild("HumanoidRootPart")
+				local meuHumanoid = meuChar:FindFirstChildOfClass("Humanoid")
+				local inimigo = obterInimigoValido()
+
+				if meuRoot and meuHumanoid and inimigo then
+					local inimigoRoot = inimigo:FindFirstChild("HumanoidRootPart")
+					
+					if inimigoRoot then
+						-- 1. Anti-Gravidade / Trava de Velocidade
+						meuRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+
+						-- 2. Teleporte Subterrâneo (Subtrai a profundidade no eixo Y)
+						local posicaoDebaixo = inimigoRoot.Position - Vector3.new(0, PROFUNDIDADE_TERRA, 0)
+						meuRoot.CFrame = CFrame.new(posicaoDebaixo, inimigoRoot.Position)
+						
+						-- Câmera acompanha o alvo olhando para cima
+						camera.CFrame = CFrame.new(camera.CFrame.Position, inimigoRoot.Position)
+
+						-- 3. Clicker de Ataque / Auto-Equip
+						if tick() - ultimoAtaque >= COOLDOWN_ATAQUE then
+							ultimoAtaque = tick()
+
+							local ferramenta = localPlayer.Backpack:FindFirstChildOfClass("Tool") or meuChar:FindFirstChildOfClass("Tool")
+							if ferramenta and ferramenta.Parent ~= meuChar then
+								meuHumanoid:EquipTool(ferramenta)
+							end
+
+							VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+							task.wait(0.01)
+							VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+						end
+					end
+				else
+					task.wait(0.2)
+				end
+			end
+		end
+	end
+end)
