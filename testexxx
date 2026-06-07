@@ -1,50 +1,69 @@
 -- =============================================================================
--- SERVIÇOS DO ROBLOX
+-- SERVIÇOS DO ROBLOX E VERIFICAÇÃO DE AMBIENTE
 -- =============================================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
 
 local localPlayer = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+
+-- Garante o carregamento da UI no local correto
+local pastaUI = nil
+pcall(function()
+	if CoreGui and not RunService:IsStudio() then
+		pastaUI = CoreGui
+	end
+end)
+
+if not pastaUI then
+	pastaUI = localPlayer:WaitForChild("PlayerGui", 10)
+end
 
 -- =============================================================================
 -- ESTADO / CONFIGURAÇÕES
 -- =============================================================================
 local AUTOFARM_ATIVO = false
-local ALVO_SELECIONADO = "Mais Próximo" -- Pode ser "Mais Próximo" ou o Nome de alguém
+local ALVO_SELECIONADO = "Mais Próximo"
 
 local DISTANCIA_MIRA = 1000
-local PROFUNDIDADE_TERRA = 6 -- Distância abaixo do inimigo (em studs)
-local COOLDOWN_ATAQUE = 0.15
-local MENU_ABERTO = true -- Controla se o menu começa aberto ou fechado
+local PROFUNDIDADE_TERRA = 6
+local ALTURA_CEU = 500
+
+local TEMPO_PRESSIONADO = 0.05
+local COOLDOWN_ATAQUE = 0.45
+local PAUSA_COMBO = 2.2         -- ALTERADO: Espera exatamente 2,2 segundos após os 4 hits
+
+local MENU_ABERTO = true
 
 -- =============================================================================
--- CRIAÇÃO DA INTERFACE GRÁFICA (UI)
+-- DESTRUIÇÃO DE INTERFACE ANTIGA
+-- =============================================================================
+if pastaUI:FindFirstChild("AutofarmPremiumUI") then
+	pastaUI["AutofarmPremiumUI"]:Destroy()
+end
+
+-- =============================================================================
+-- CRIAÇÃO DA INTERFACE GRÁFICA (SISTEMA DE ESCALA UNIVERSAL)
 -- =============================================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "AutofarmPremiumUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = pastaUI
 
--- Evitar duplicação da UI se reexecutar o script
-local uiAntiga = localPlayer:WaitForChild("PlayerGui"):FindFirstChild("AutofarmPremiumUI")
-if uiAntiga then uiAntiga:Destroy() end
-ScreenGui.Parent = localPlayer:WaitForChild("PlayerGui")
-
--- -----------------------------------------------------------------------------
--- NOVO: BOTÃO DE ABRIR / FECHAR (Alternador Global)
--- -----------------------------------------------------------------------------
 local MenuToggleBtn = Instance.new("TextButton")
 MenuToggleBtn.Name = "MenuToggleBtn"
-MenuToggleBtn.Size = UDim2.new(0, 100, 0, 35)
-MenuToggleBtn.Position = UDim2.new(0, 10, 0, 10) -- Fica no topo esquerdo da tela
+MenuToggleBtn.Size = UDim2.new(0.12, 0, 0.05, 0)
+MenuToggleBtn.Position = UDim2.new(0.02, 0, 0.02, 0)
 MenuToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 MenuToggleBtn.Text = "Fechar Hub"
 MenuToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 MenuToggleBtn.Font = Enum.Font.GothamBold
 MenuToggleBtn.TextSize = 12
+MenuToggleBtn.TextScaled = true
 MenuToggleBtn.Parent = ScreenGui
 
 local MenuToggleCorner = Instance.new("UICorner")
@@ -56,50 +75,47 @@ MenuToggleStroke.Color = Color3.fromRGB(60, 60, 60)
 MenuToggleStroke.Thickness = 1
 MenuToggleStroke.Parent = MenuToggleBtn
 
--- Frame Principal (Janela)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 300, 0, 350)
-MainFrame.Position = UDim2.new(0.5, -150, 0.4, -175)
+MainFrame.Size = UDim2.new(0.28, 0, 0.45, 0)
+MainFrame.Position = UDim2.new(0.36, 0, 0.27, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
-MainFrame.Draggable = true 
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 10)
 UICorner.Parent = MainFrame
 
--- Título
 local Title = Instance.new("TextLabel")
 Title.Name = "Title"
-Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Size = UDim2.new(1, 0, 0.12, 0)
 Title.BackgroundTransparency = 1
 Title.Text = "★ KILLER HUB | UNDERGROUND ★"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
+Title.TextSize = 14
+Title.TextScaled = true
 Title.Parent = MainFrame
 
--- Linha divisória
 local Line = Instance.new("Frame")
 Line.Size = UDim2.new(0.9, 0, 0, 1)
-Line.Position = UDim2.new(0.05, 0, 0, 40)
+Line.Position = UDim2.new(0.05, 0, 0.12, 0)
 Line.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 Line.BorderSizePixel = 0
 Line.Parent = MainFrame
 
--- Botão de Ligar / Desligar (Toggle do Autofarm)
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Name = "ToggleBtn"
-ToggleBtn.Size = UDim2.new(0.9, 0, 0, 45)
-ToggleBtn.Position = UDim2.new(0.05, 0, 0, 55)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40) -- Vermelho (Desligado)
+ToggleBtn.Size = UDim2.new(0.9, 0, 0.13, 0)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0.16, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
 ToggleBtn.Text = "STATUS: DESLIGADO"
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.TextSize = 14
+ToggleBtn.TextSize = 13
+ToggleBtn.TextScaled = true
 ToggleBtn.AutoButtonColor = false
 ToggleBtn.Parent = MainFrame
 
@@ -107,22 +123,21 @@ local BtnCorner = Instance.new("UICorner")
 BtnCorner.CornerRadius = UDim.new(0, 8)
 BtnCorner.Parent = ToggleBtn
 
--- Subtítulo da Lista de Alvos
 local ListTitle = Instance.new("TextLabel")
-ListTitle.Size = UDim2.new(0.9, 0, 0, 25)
-ListTitle.Position = UDim2.new(0.05, 0, 0, 110)
+ListTitle.Size = UDim2.new(0.9, 0, 0.08, 0)
+ListTitle.Position = UDim2.new(0.05, 0, 0.31, 0)
 ListTitle.BackgroundTransparency = 1
 ListTitle.Text = "Selecione o Alvo para Focar:"
 ListTitle.TextColor3 = Color3.fromRGB(180, 180, 180)
 ListTitle.Font = Enum.Font.GothamSemibold
-ListTitle.TextSize = 13
+ListTitle.TextSize = 12
+ListTitle.TextScaled = true
 ListTitle.TextXAlignment = Enum.TextXAlignment.Left
 ListTitle.Parent = MainFrame
 
--- Container de Lista com Scroll
 local ScrollingFrame = Instance.new("ScrollingFrame")
-ScrollingFrame.Size = UDim2.new(0.9, 0, 0, 190)
-ScrollingFrame.Position = UDim2.new(0.05, 0, 0, 140)
+ScrollingFrame.Size = UDim2.new(0.9, 0, 0.55, 0)
+ScrollingFrame.Position = UDim2.new(0.05, 0, 0.40, 0)
 ScrollingFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
 ScrollingFrame.BorderSizePixel = 0
 ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -140,11 +155,40 @@ UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 5)
 
 -- =============================================================================
--- LÓGICA DE INTERFACE: ABRIR / FECHAR
+-- ARRASTAR ADAPTATIVO
+-- =============================================================================
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+	local delta = input.Position - dragStart
+	MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+MainFrame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = MainFrame.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then dragging = false end
+		end)
+	end
+end)
+
+MainFrame.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then update(input) end
+end)
+
+-- =============================================================================
+-- COMPORTAMENTO DOS BOTÕES
 -- =============================================================================
 MenuToggleBtn.MouseButton1Click:Connect(function()
 	MENU_ABERTO = not MENU_ABERTO
-	
 	if MENU_ABERTO then
 		MenuToggleBtn.Text = "Fechar Hub"
 		TweenService:Create(MenuToggleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}):Play()
@@ -156,16 +200,10 @@ MenuToggleBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- =============================================================================
--- LÓGICA DE SELEÇÃO E ATUALIZAÇÃO DA LISTA DE JOGADORES
--- =============================================================================
-local botoesJogadores = {}
-
 local function atualizarListaAlvos()
 	for _, obj in ipairs(ScrollingFrame:GetChildren()) do
 		if obj:IsA("TextButton") then obj:Destroy() end
 	end
-	botoesJogadores = {}
 
 	local deuses = {"Mais Próximo"}
 	for _, p in ipairs(Players:GetPlayers()) do
@@ -176,7 +214,7 @@ local function atualizarListaAlvos()
 		local PlayerBtn = Instance.new("TextButton")
 		PlayerBtn.Size = UDim2.new(1, -6, 0, 35)
 		PlayerBtn.Font = Enum.Font.Gotham
-		PlayerBtn.TextSize = 13
+		PlayerBtn.TextSize = 12
 		PlayerBtn.Text = nome
 		PlayerBtn.BorderSizePixel = 0
 		
@@ -199,15 +237,12 @@ local function atualizarListaAlvos()
 
 		PlayerBtn.Parent = ScrollingFrame
 	end
-	
 	ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y + 10)
 end
 
 Players.PlayerAdded:Connect(atualizarListaAlvos)
 Players.PlayerRemoving:Connect(function(player)
-	if ALVO_SELECIONADO == player.Name then
-		ALVO_SELECIONADO = "Mais Próximo"
-	end
+	if ALVO_SELECIONADO == player.Name then ALVO_SELECIONADO = "Mais Próximo" end
 	atualizarListaAlvos()
 end)
 
@@ -225,7 +260,7 @@ ToggleBtn.MouseButton1Click:Connect(function()
 end)
 
 -- =============================================================================
--- SISTEMA DE BUSCA DE INIMIGOS
+-- PROCURAR ALVOS
 -- =============================================================================
 local function obterInimigoValido()
 	local meuChar = localPlayer.Character
@@ -238,7 +273,6 @@ local function obterInimigoValido()
 			local char = pAlvo.Character
 			local humanoid = char:FindFirstChildOfClass("Humanoid")
 			local rootPart = char:FindFirstChild("HumanoidRootPart")
-			
 			if humanoid and rootPart and humanoid.Health > 0 and not char:FindFirstChildOfClass("ForceField") then
 				return char
 			end
@@ -268,52 +302,77 @@ local function obterInimigoValido()
 end
 
 -- =============================================================================
--- LOOP PRINCIPAL (MODO SUBTERRÂNEO)
+-- THREAD 1: TELEPORTE ESTÁVEL
+-- =============================================================================
+local inimigoAtualGlobal = nil
+local camera = workspace.CurrentCamera
+
+RunService.Heartbeat:Connect(function()
+	if not AUTOFARM_ATIVO then return end
+	
+	local meuChar = localPlayer.Character
+	if meuChar then
+		local meuRoot = meuChar:FindFirstChild("HumanoidRootPart")
+		if meuRoot then
+			local inimigo = obterInimigoValido()
+			inimigoAtualGlobal = inimigo
+
+			if inimigo then
+				local inimigoRoot = inimigo:FindFirstChild("HumanoidRootPart")
+				local inimigoHumanoid = inimigo:FindFirstChildOfClass("Humanoid")
+				
+				if inimigoRoot and inimigoHumanoid and inimigoHumanoid.Health > 0 then
+					meuRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+					local posicaoDebaixo = inimigoRoot.Position - Vector3.new(0, PROFUNDIDADE_TERRA, 0)
+					meuRoot.CFrame = CFrame.new(posicaoDebaixo, inimigoRoot.Position)
+					camera.CFrame = CFrame.new(camera.CFrame.Position, inimigoRoot.Position)
+					return
+				end
+			end
+			meuRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			meuRoot.CFrame = CFrame.new(meuRoot.Position.X, ALTURA_CEU, meuRoot.Position.Z)
+		end
+	end
+end)
+
+-- =============================================================================
+-- THREAD 2: MOTOR DE COMBO (4 HITS + 2.2s ESPERA)
 -- =============================================================================
 task.spawn(function()
-	local ultimoAtaque = 0
-
 	while true do
-		RunService.Heartbeat:Wait()
-		
-		if AUTOFARM_ATIVO then
+		if not AUTOFARM_ATIVO or not inimigoAtualGlobal then
+			task.wait(0.5)
+		else
 			local meuChar = localPlayer.Character
 			if meuChar then
-				local meuRoot = meuChar:FindFirstChild("HumanoidRootPart")
 				local meuHumanoid = meuChar:FindFirstChildOfClass("Humanoid")
-				local inimigo = obterInimigoValido()
+				local inimigoHumanoid = inimigoAtualGlobal:FindFirstChildOfClass("Humanoid")
 
-				if meuRoot and meuHumanoid and inimigo then
-					local inimigoRoot = inimigo:FindFirstChild("HumanoidRootPart")
-					
-					if inimigoRoot then
-						-- 1. Anti-Gravidade / Trava de Velocidade
-						meuRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-
-						-- 2. Teleporte Subterrâneo (Subtrai a profundidade no eixo Y)
-						local posicaoDebaixo = inimigoRoot.Position - Vector3.new(0, PROFUNDIDADE_TERRA, 0)
-						meuRoot.CFrame = CFrame.new(posicaoDebaixo, inimigoRoot.Position)
+				if meuHumanoid and inimigoHumanoid and inimigoHumanoid.Health > 0 then
+					for hitAtual = 1, 4 do
+						if not AUTOFARM_ATIVO or not inimigoHumanoid or inimigoHumanoid.Health <= 0 then 
+							break 
+						end
 						
-						-- Câmera acompanha o alvo olhando para cima
-						camera.CFrame = CFrame.new(camera.CFrame.Position, inimigoRoot.Position)
+						local ferramenta = localPlayer.Backpack:FindFirstChildOfClass("Tool") or meuChar:FindFirstChildOfClass("Tool")
+						if ferramenta and ferramenta.Parent ~= meuChar then
+							meuHumanoid:EquipTool(ferramenta)
+						end
 
-						-- 3. Clicker de Ataque / Auto-Equip
-						if tick() - ultimoAtaque >= COOLDOWN_ATAQUE then
-							ultimoAtaque = tick()
+						VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+						task.wait(TEMPO_PRESSIONADO) 
+						VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
 
-							local ferramenta = localPlayer.Backpack:FindFirstChildOfClass("Tool") or meuChar:FindFirstChildOfClass("Tool")
-							if ferramenta and ferramenta.Parent ~= meuChar then
-								meuHumanoid:EquipTool(ferramenta)
-							end
-
-							VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-							task.wait(0.01)
-							VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+						if hitAtual < 4 then
+							task.wait(COOLDOWN_ATAQUE)
 						end
 					end
+					task.wait(PAUSA_COMBO)
 				else
-					task.wait(0.2)
+					task.wait(0.1)
 				end
+			else
+				task.wait(0.1)
 			end
 		end
 	end
